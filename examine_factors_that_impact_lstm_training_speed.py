@@ -1,3 +1,4 @@
+from save_load_time import VariableSaverAndLoader
 import torch
 import time
 import pandas as pd
@@ -14,6 +15,7 @@ device = torch.device("cpu")  # TODO cpu or gpu
 number_of_days_to_predict_ahead = 1
 total_size = 3000
 batch_size = 160  # TODO 1, 20, 40, 80, 160
+inference_batch_size = 160
 input_length = 20
 number_of_input_variables = 3
 input_size = 3
@@ -53,5 +55,43 @@ end_time_model_training = time.time()
 duration_time_model_training = (end_time_model_training - start_time_model_training)/60
 print('model training takes time: ' + str(duration_time_model_training))
 
-# when batch_size=1, batch generator has a size of 2961
-# when batch_size=80, ............................ 38; all batches have size of 80, except last batch has size of 1
+## inference
+inference_dataloader = tf.keras.preprocessing.timeseries_dataset_from_array(data=precursor_dataset.values[:-input_length, :], targets=precursor_dataset.values[input_length:, 0], sequence_length=input_length, batch_size=inference_batch_size)
+
+start_time_model_inference = time.time()
+
+model = modifiedLSTMModelOperator.model
+model.eval()
+list_of_prediction_for_last_time_step_of_a_batch = []
+for input_of_batch_data, output_of_batch_data in inference_dataloader:
+    with torch.no_grad():
+        input_of_batch_data = torch.Tensor(input_of_batch_data.numpy()).to(device)
+        output_of_batch_data = torch.Tensor(output_of_batch_data.numpy()).reshape(-1, 1, 1).to(device)
+
+        h_0, c_0 = model.init_hidden(number_of_sequences_in_a_batch=input_of_batch_data.shape[0])
+        h_0 = h_0.to(device)
+        c_0 = c_0.to(device)
+
+        predicted_output_tensor, _ = model(input_of_batch_data, (h_0, c_0))  # expect input of shape (batch_size, seq_len, input_size)
+        prediction_of_the_last_one_in_a_batch_and_the_time_step = predicted_output_tensor[0, -1, 0]  # always take the first in a batch (because the batch size should only be 1), and the first variable (default to be output variable)
+        list_of_prediction_for_last_time_step_of_a_batch.append(prediction_of_the_last_one_in_a_batch_and_the_time_step)
+
+end_time_model_inference = time.time()
+duration_time_model_inference = (end_time_model_inference - start_time_model_inference)/60
+print('model inference takes time: ' + str(duration_time_model_inference))
+
+#
+## 0.0012
+VariableSaverAndLoader(list_of_variables_to_save=[number_of_days_to_predict_ahead, total_size, batch_size, inference_batch_size, input_length, number_of_input_variables, input_size, output_size, hidden_size, hyper_parameter_value_combination, train_input_output_tensor_list, test_input_output_tensor_list, many_to_many, loss_function, generate_train_prediction, generate_test_prediction, early_stopping], save=True).duration_time_save
+
+## 0.0003
+VariableSaverAndLoader(list_of_variables_to_save=[number_of_days_to_predict_ahead, total_size, batch_size, inference_batch_size, input_length, number_of_input_variables, input_size, output_size, hidden_size, hyper_parameter_value_combination, train_input_output_tensor_list, test_input_output_tensor_list, many_to_many, loss_function, generate_train_prediction, generate_test_prediction, early_stopping], load=True).duration_time_load
+
+## 0.0019
+VariableSaverAndLoader(list_of_variables_to_save=[precursor_dataset], save=True).duration_time_save
+## 0.002
+VariableSaverAndLoader(list_of_variables_to_save=[precursor_dataset], load=True).duration_time_load
+
+VariableSaverAndLoader(list_of_variables_to_save=[dataloader], save=True).duration_time_save
+VariableSaverAndLoader(list_of_variables_to_save=[dataloader], load=True).duration_time_load
+#
